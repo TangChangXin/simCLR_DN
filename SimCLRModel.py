@@ -244,14 +244,14 @@ class SimCLR有标签微调阶段(torch.nn.Module):
         self.layer2 = self._make_layer(block, 128, blocks_num[1], stride=2)
         self.layer3 = self._make_layer(block, 256, blocks_num[2], stride=2)
         self.layer4 = self._make_layer(block, 512, blocks_num[3], stride=2)
-        # todo 自己的模型需要修改
+        # todo 自己的模型可能不需要全局池化层
         if self.include_top:
             # 最后一个池化层输出直接送入投影模块,不需要接全连接层
             self.avgpool = nn.AdaptiveAvgPool2d((1, 1))  # output size = (1, 1)
 
         # 写在上面这些层定义的后面，就可以实现对上面这些权重的冻结
-        for 模型参数 in self.parameters():
-            模型参数.requires_grad = False
+        # for 模型参数 in self.parameters():
+        #     模型参数.requires_grad = False
 
         # 分类器
         全连接输入大小 = 2048 # 后续可能要改成自己模型适应的大小
