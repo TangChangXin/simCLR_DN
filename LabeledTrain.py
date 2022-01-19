@@ -7,6 +7,75 @@ from tqdm import tqdm
 from torch.backends.cudnn import deterministic
 
 
+def 训练模型(网络模型, 优化器, 预训练权重路径, 硬件设备, 命令行参数, 随机图像变换):
+    # 加载训练数据集和测试数据集
+    数据集根路径 = "LabeledDataset"
+    有标签训练数据集 = datasets.ImageFolder(root=os.path.join(数据集根路径, "Train"), transform=随机图像变换["测试集"])
+    有标签训练数据 = torch.utils.data.DataLoader(有标签训练数据集, batch_size=命令行参数.labeled_data_batch_size, shuffle=True,
+                                          num_workers=0, pin_memory=True)
+    有标签测试数据集 = datasets.ImageFolder(root=os.path.join(数据集根路径, "Validate"), transform=随机图像变换["测试集"])
+    有标签测试数据 = torch.utils.data.DataLoader(有标签测试数据集, batch_size=命令行参数.labeled_data_batch_size, shuffle=False,
+                                          num_workers=0, pin_memory=True)
+    assert os.path.exists(预训练权重路径), "自监督预训练模型权重{}不存在.".format(预训练权重路径)
+    网络模型.load_state_dict(torch.load(预训练权重路径), strict=False)  # 加载无监督预训练模型
+    网络模型.to(硬件设备)
+    训练损失函数 = torch.nn.CrossEntropyLoss()
+    测试损失函数 = torch.nn.CrossEntropyLoss()
+    学习率调整器 = torch.optim.lr_scheduler.ReduceLROnPlateau(优化器, mode='max', factor=0.5, patience=10, cooldown=10)
+    最高测试准确率 = 0.0
+    # 开始训练
+    for 当前训练周期 in range(1, 命令行参数.labeled_train_max_epoch + 1):
+        网络模型.train()
+        当前周期全部训练损失 = 0.0
+        # 每一批数据训练。enumerate可以在遍历元素的同时输出元素的索引
+        训练循环 = tqdm(enumerate(有标签训练数据), total=len(有标签训练数据), leave=True)
+        for 当前批次, (图像数据, 标签) in 训练循环:
+            图像数据, 标签 = 图像数据.to(硬件设备), 标签.to(硬件设备)
+            训练集预测概率 = 网络模型(图像数据)
+            训练损失 = 训练损失函数(训练集预测概率, 标签)  # 每一批的训练损失
+            优化器.zero_grad()
+            训练损失.backward()
+            优化器.step()
+            当前周期全部训练损失 += 训练损失.detach().item()
+            训练循环.desc = "训练迭代周期 [{}/{}] 当前训练损失：{:.8f}".format(当前训练周期, 命令行参数.labeled_train_max_epoch,
+                                                            训练损失.detach().item())  # 设置进度条描述
+
+        学习率调整器.step(当前周期全部训练损失)  # 调整学习率
+        # 记录每个周期训练损失值
+        with open(os.path.join("Weight", "OCTA(FULL)" + 优化器.__class__.__name__ + "LabeledTrainLoss.txt"), "a") as f:
+            f.write(str(当前周期全部训练损失) + "\n")
+
+
+        网络模型.eval() # 每一周期数据训练完成后测试模型效果
+        当前周期全部测试损失 = 0.0
+        测试正确的总数目 = 0
+        # 下方代码块不反向计算梯度
+        with torch.no_grad():
+            测试循环 = tqdm(enumerate(有标签测试数据), total=len(有标签测试数据), leave=True)
+            for 当前批次, (图像数据, 标签) in 测试循环:
+                图像数据, 标签 = 图像数据.to(硬件设备), 标签.to(硬件设备)
+                测试集预测概率 = 网络模型(图像数据)
+                测试损失 = 测试损失函数(测试集预测概率, 标签)
+                当前周期全部测试损失 += 测试损失.detach().item()
+                # torch.max(a,1)返回行最大值和列索引。结果中的第二个张量是列索引
+                预测类别 = torch.max(测试集预测概率, dim=1)[1]
+                测试正确的总数目 += torch.eq(预测类别, 标签).sum().item()  # 累加每个批次预测正确的数目
+                测试循环.desc = "测试迭代周期 [{}/{}] 当前测试损失：{:.8f}".format(当前训练周期, 命令行参数.labeled_train_max_epoch, 测试损失.detach().item())  # 设置进度条描述
+        当前迭代周期测试准确率 = 测试正确的总数目 / len(有标签测试数据集)
+
+        # 记录每个周期测试损失值
+        with open(os.path.join("Weight", "OCTA(FULL)" + 优化器.__class__.__name__ + "LabeledTestLoss.txt"), "a") as f:
+            f.write(str(当前周期全部测试损失) + "\n")
+
+        with open(os.path.join("Weight", "OCTA(FULL)" + 优化器.__class__.__name__ + "TestAccuracy.txt"), "a") as f:
+            f.write(str(当前迭代周期测试准确率) + "\n")
+
+        # 以最高测试准确率作为模型保存的标准
+        if 当前迭代周期测试准确率 > 最高测试准确率:
+            最高测试准确率 = 当前迭代周期测试准确率
+            torch.save(网络模型.state_dict(), os.path.join("Weight", "OCTA(FULL)" + 优化器.__class__.__name__ + "BestLabeledModel" + ".pth"))
+
+
 def 有标签训练(命令行参数):
     #  init seed 初始化随机种子
     全部随机数种子 = 222
@@ -51,85 +120,34 @@ def 有标签训练(命令行参数):
             transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])])
     }
 
-    # 加载训练数据集和测试数据集
-    有标签训练数据集 = datasets.ImageFolder(root="LabeledDataset/Train", transform=随机图像变换["测试集"])
-    # win可能多线程报错，num_workers最多和CPU的超线程数目相同，若报错设为0
-    # todo 线程数 = min([os.cpu_count(), 命令行参数.batch_size if 命令行参数.batch_size > 1 else 0, 8])  # number of workers
-    有标签训练数据 = torch.utils.data.DataLoader(有标签训练数据集, batch_size=命令行参数.labeled_data_batch_size, shuffle=True,
-                                          num_workers=0, pin_memory=True)
-    有标签测试数据集 = datasets.ImageFolder(root="LabeledDataset/Validate", transform=随机图像变换["测试集"])
-    有标签测试数据 = torch.utils.data.DataLoader(有标签测试数据集, batch_size=命令行参数.labeled_data_batch_size, shuffle=False,
-                                          num_workers=0, pin_memory=True)
+    # 优化器 = torch.optim.Adam(分类模型.全连接.parameters(), lr=1e-3, weight_decay=1e-6) # 只训练分类层
+    分类模型1 = SimCLRModel.有监督simCLRresnet50(2)
+    优化器1 = torch.optim.Adam(分类模型1.parameters())
+    训练模型(分类模型1, 优化器1, "Weight/OCTA(FULL)AdamunlabeledBest_model.pth",硬件设备, 命令行参数, 随机图像变换)
 
-    分类模型 = SimCLRModel.有监督simCLRresnet50(2)  # 生成模型，需传入分类数目
-    无标签训练权重路径 = 命令行参数.unlabeled_model_path
-    assert os.path.exists(无标签训练权重路径), "自监督模型权重{}不存在.".format(无标签训练权重路径)
-    阶段1模型参数 = torch.load(无标签训练权重路径, map_location=硬件设备)  # 字典形式读取的权重
-    分类模型参数 = 分类模型.state_dict()  # 自己设计的模型参数字典
+    # 分类模型2 = SimCLRModel.有监督simCLRresnet50(2)
+    # 优化器2 = torch.optim.Adam(分类模型2.parameters())
+    # 训练模型(分类模型2, 优化器2, 硬件设备, 命令行参数, 随机图像变换)
 
-    # 遍历阶段1保存模型的参数并赋值给阶段2模型中对应名称的参数
-    编码器参数 = {键: 值 for 键, 值 in 阶段1模型参数.items() if 键 in 分类模型参数.keys()}
-    分类模型参数.update(编码器参数)  # 更新我模型的参数，实际就是使用Res50模型参数
-    分类模型.load_state_dict(分类模型参数)  # 加载模型参数
-    分类模型.to(硬件设备)
-    损失函数 = torch.nn.CrossEntropyLoss()
-    优化器 = torch.optim.Adam(分类模型.全连接.parameters(), lr=1e-3, weight_decay=1e-6)
+    # 分类模型3 = SimCLRModel.有监督simCLRresnet50(2)
+    # 优化器3 = torch.optim.Adam(分类模型3.parameters())
+    # 训练模型(分类模型3, 优化器3, 硬件设备, 命令行参数, 随机图像变换)
 
-    最高测试准确率 = 0.0
+    # 分类模型4 = SimCLRModel.有监督simCLRresnet50(2)
+    # 优化器4 = torch.optim.Adam(分类模型4.parameters())
+    # 训练模型(分类模型4, 优化器4, 硬件设备, 命令行参数, 随机图像变换)
+
     # 开始训练
-    for 当前训练周期 in range(1, 命令行参数.labeled_train_max_epoch + 1):
-        分类模型.train()
-        当前周期全部损失 = 0.0
-        # 每一批数据训练。enumerate可以在遍历元素的同时输出元素的索引
-        训练循环 = tqdm(enumerate(有标签训练数据), total=len(有标签训练数据), leave=True)
-        for 当前批次, (图像数据, 标签) in 训练循环:
-            图像数据, 标签 = 图像数据.to(硬件设备), 标签.to(硬件设备)
-            训练集预测概率 = 分类模型(图像数据)
-            训练损失 = 损失函数(训练集预测概率, 标签) # 每一批的训练损失
-            优化器.zero_grad()
-            训练损失.backward()
-            优化器.step()
-            当前周期全部损失 += 训练损失.detach().item()
-            训练循环.desc = "训练迭代周期 [{}/{}] 当前损失：{:.8f}".format(当前训练周期, 命令行参数.labeled_train_max_epoch,
-                                                          训练损失.detach().item())  # 设置进度条描述
-
-        # 记录每个周期的平均每批损失值
-        with open(os.path.join("Weight", "stage2_loss.txt"), "a") as f:
-            f.write(str(当前周期全部损失 / len(有标签训练数据集) * 命令行参数.labeled_data_batch_size) + "\n")
-
-        分类模型.eval()  # 每一批数据训练完成后测试模型效果
-        测试正确的总数目 = 0
-        # 下方代码块不反向计算梯度
-        with torch.no_grad():
-            测试循环 = tqdm(enumerate(有标签测试数据), total=len(有标签测试数据), leave=True)
-            for 当前批次, (图像数据, 标签) in 测试循环:
-                图像数据, 标签 = 图像数据.to(硬件设备), 标签.to(硬件设备)
-                测试集预测概率 = 分类模型(图像数据)
-                # torch.max(a,1)返回行最大值和列索引。结果中的第二个张量是列索引
-                预测类别 = torch.max(测试集预测概率, dim=1)[1]
-                测试正确的总数目 += torch.eq(预测类别, 标签).sum().item() # 累加每个批次预测正确的数目
-                测试循环.desc = "测试迭代周期 [{}/{}]".format(当前训练周期, 命令行参数.labeled_train_max_epoch)  # 设置进度条描述
-        当前迭代周期测试准确率 = 测试正确的总数目 / len(有标签测试数据集)
-        print("[迭代周期 %d] 平均训练损失: %.8f  测试准确率: %.4f" % (当前训练周期, 当前周期全部损失 / len(有标签训练数据集) * 命令行参数.labeled_data_batch_size, 当前迭代周期测试准确率))
-        with open(os.path.join("Weight", "TestAccuracy .txt"), "a") as f:
-            f.write(str(当前迭代周期测试准确率) + "\n")
-
-        # 以最高测试准确率作为模型保存的标准
-        if 当前迭代周期测试准确率 > 最高测试准确率:
-            最高测试准确率 = 当前迭代周期测试准确率
-            torch.save(分类模型.state_dict(), os.path.join("Weight", "LabeledModel" + ".pth"))
 
 
 if __name__ == '__main__':
     # 设置一个参数解析器
-    命令行参数解析器 = argparse.ArgumentParser(description="无标签训练 SimCLR")
+    命令行参数解析器 = argparse.ArgumentParser(description="有标签训练 SimCLR")
 
     # 添加有标签数据训练时的参数
-    命令行参数解析器.add_argument('--unlabeled_model_path', default="Weight/Best_model.pth", type=str, help="输入无标签训练模型的路径")
-    命令行参数解析器.add_argument('--labeled_data_batch_size', default=3, type=int, help="有标签数据训练时的批量大小")
+    命令行参数解析器.add_argument('--labeled_data_batch_size', default=1, type=int, help="有标签数据训练时的批量大小")
     命令行参数解析器.add_argument('--labeled_train_max_epoch', default=2, type=int, help="有标签训练的最大迭代周期")
-    命令行参数解析器.add_argument('--labeled_train_resize', default=300, type=int, help="随机缩放图像的大小")
-
+    命令行参数解析器.add_argument('--labeled_train_resize', default=224, type=int, help="随机缩放图像的大小")
 
     # 获取命令行传入的参数
     有标签训练命令行参数 = 命令行参数解析器.parse_args()
