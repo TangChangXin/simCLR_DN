@@ -118,7 +118,6 @@ def 无标签训练(命令行参数):
             transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])])
     }
 
-
     '''
     # 用于无标签数据训练的模型
     网络模型 = SimCLRModel.无监督simCLRresnet50()
@@ -133,12 +132,10 @@ def 无标签训练(命令行参数):
     网络模型.load_state_dict(simCLR模型参数) # 加载模型参数
     '''
 
-    '''
     网络模型1 = SimCLRModel.无监督simCLRresnet50(True)
     网络模型1.to(硬件设备)
     优化器1 = torch.optim.Adam(网络模型1.parameters())
     训练模型(网络模型1, 优化器1, 硬件设备, 命令行参数, 随机图像变换)
-    '''
 
     网络模型2 = SimCLRModel.无监督simCLRresnet50(True)
     网络模型2.to(硬件设备)
