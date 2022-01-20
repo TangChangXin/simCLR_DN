@@ -27,8 +27,9 @@ def 训练模型(网络模型, 优化器, 预训练权重路径, 硬件设备, �
     for 当前训练周期 in range(1, 命令行参数.labeled_train_max_epoch + 1):
         网络模型.train()
         当前周期全部训练损失 = 0.0
+        训练正确总数目 = 0
         # 每一批数据训练。enumerate可以在遍历元素的同时输出元素的索引
-        训练循环 = tqdm(enumerate(有标签训练数据), total=len(有标签训练数据), leave=True)
+        训练循环 = tqdm(enumerate(有标签训练数据), total=len(有标签训练数据), ncols=130, leave=True)
         for 当前批次, (图像数据, 标签) in 训练循环:
             图像数据, 标签 = 图像数据.to(硬件设备), 标签.to(硬件设备)
             训练集预测概率 = 网络模型(图像数据)
@@ -37,21 +38,24 @@ def 训练模型(网络模型, 优化器, 预训练权重路径, 硬件设备, �
             训练损失.backward()
             优化器.step()
             当前周期全部训练损失 += 训练损失.detach().item()
-            训练循环.desc = "训练迭代周期 [{}/{}] 当前训练损失：{:.8f}".format(当前训练周期, 命令行参数.labeled_train_max_epoch,
-                                                            训练损失.detach().item())  # 设置进度条描述
+            # torch.max(a,1)返回行最大值和列索引。结果中的第二个张量是列索引
+            预测类别 = torch.max(训练集预测概率, dim=1)[1]
+            训练正确总数目 += torch.eq(预测类别, 标签).sum().item()  # 累加每个批次预测正确的数目
+            当前迭代周期训练准确率 = 训练正确总数目 / len(有标签训练数据集)
+            训练循环.desc = "训练周期 [{}/{}] 训练损失：{:.8f} 准确率{:.8f}".format(当前训练周期, 命令行参数.labeled_train_max_epoch,
+                                                            训练损失.detach().item(), 当前迭代周期训练准确率)  # 设置进度条描述
 
         学习率调整器.step(当前周期全部训练损失)  # 调整学习率
         # 记录每个周期训练损失值
         with open(os.path.join("Weight", "OCTA(FULL)" + 优化器.__class__.__name__ + "LabeledTrainLoss.txt"), "a") as f:
             f.write(str(当前周期全部训练损失) + "\n")
 
-
         网络模型.eval() # 每一周期数据训练完成后测试模型效果
         当前周期全部测试损失 = 0.0
         测试正确的总数目 = 0
         # 下方代码块不反向计算梯度
         with torch.no_grad():
-            测试循环 = tqdm(enumerate(有标签测试数据), total=len(有标签测试数据), leave=True)
+            测试循环 = tqdm(enumerate(有标签测试数据), total=len(有标签测试数据), ncols=130, leave=True)
             for 当前批次, (图像数据, 标签) in 测试循环:
                 图像数据, 标签 = 图像数据.to(硬件设备), 标签.to(硬件设备)
                 测试集预测概率 = 网络模型(图像数据)
@@ -60,8 +64,9 @@ def 训练模型(网络模型, 优化器, 预训练权重路径, 硬件设备, �
                 # torch.max(a,1)返回行最大值和列索引。结果中的第二个张量是列索引
                 预测类别 = torch.max(测试集预测概率, dim=1)[1]
                 测试正确的总数目 += torch.eq(预测类别, 标签).sum().item()  # 累加每个批次预测正确的数目
-                测试循环.desc = "测试迭代周期 [{}/{}] 当前测试损失：{:.8f}".format(当前训练周期, 命令行参数.labeled_train_max_epoch, 测试损失.detach().item())  # 设置进度条描述
-        当前迭代周期测试准确率 = 测试正确的总数目 / len(有标签测试数据集)
+                当前迭代周期测试准确率 = 测试正确的总数目 / len(有标签测试数据集)
+                测试循环.desc = "测试周期 [{}/{}] 测试损失：{:.8f} 准确率{:.8f}".format(当前训练周期, 命令行参数.labeled_train_max_epoch, 测试损失.detach().item(), 当前迭代周期测试准确率)  # 设置进度条描述
+        # 当前迭代周期测试准确率 = 测试正确的总数目 / len(有标签测试数据集)
 
         # 记录每个周期测试损失值
         with open(os.path.join("Weight", "OCTA(FULL)" + 优化器.__class__.__name__ + "LabeledTestLoss.txt"), "a") as f:
