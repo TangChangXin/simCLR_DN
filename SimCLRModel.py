@@ -3,10 +3,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchsummary import summary
 
-# 残差块定义来源https://github.com/WZMIAOMIAO/deep-learning-for-image-processing/blob/master/pytorch_classification/Test5_resnet/model.py
+# 残差块定义来源 https://github.com/WZMIAOMIAO/deep-learning-for-image-processing/blob/master/pytorch_classification/Test5_resnet/model.py
 
 class BasicBlock(nn.Module):
-    # 用于18层和34层的残差块
+    """
+    用于18层和34层的残差块
+    """
     expansion = 1
     def __init__(self, in_channel, out_channel, stride=1, downsample=None):
         super(BasicBlock, self).__init__()
@@ -178,11 +180,7 @@ class SimCLR无标签训练阶段(nn.Module):
 
 
 # 原本没有“加载预训练权重”这个参数，我自己加的
-def simCLRresnet34():
-    # https://download.pytorch.org/models/resnet34-333f7ec4.pth
-    return SimCLR无标签训练阶段(BasicBlock, [3, 4, 6, 3])
-
-def 无监督simCLRresnet50(预训练):
+def 无监督simCLR50(预训练):
     # https://download.pytorch.org/models/resnet50-19c8e357.pth
     网络模型 = SimCLR无标签训练阶段(Bottleneck, [3, 4, 6, 3])
     if 预训练:
@@ -334,7 +332,7 @@ class 对比损失函数(nn.Module):
 
 if __name__ == "__main__":
     # 无监督训练模型 = SimCLR无标签阶段(Bottleneck, [3, 4, 6, 3])
-    无监督训练模型 = 无监督simCLRresnet50(False)
+    无监督训练模型 = 无监督simCLR50(False)
     无监督训练模型.to(torch.device('cuda:0'))
     # print(model)
     summary(无监督训练模型, input_size=(3, 112, 112), batch_size=4)
