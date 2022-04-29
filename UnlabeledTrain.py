@@ -32,7 +32,7 @@ class 无标签眼底图像数据集(torch.utils.data.Dataset):
 
 def 训练模型(网络模型, 优化器, 硬件设备, 命令行参数, 随机图像变换):
     # TODO 定义数据集路径，选择用不同的数据
-    无标签训练数据集 = 无标签眼底图像数据集(文件路径='UnlabeledTrainDataset/OCTA_6M/Projection Maps/OCTA(FULL)', 图像变换=随机图像变换["训练集"])
+    无标签训练数据集 = 无标签眼底图像数据集(文件路径='../Dataset/OCTA_6M/Projection Maps/OCTA(FULL)', 图像变换=随机图像变换["训练集"])
     # win可能多线程报错，num_workers最多和CPU的超线程数目相同，若报错设为0
     # todo 如果维度报错注意修改drop_last
     训练数据 = torch.utils.data.DataLoader(无标签训练数据集, batch_size=命令行参数.unlabeled_data_batch_size, shuffle=True, num_workers=6, drop_last=True, pin_memory=True)
@@ -45,7 +45,7 @@ def 训练模型(网络模型, 优化器, 硬件设备, 命令行参数, 随机�
         网络模型.train()  # 开始训练
         当前训练周期全部损失 = 0
         # 每一批数据训练。enumerate可以在遍历元素的同时输出元素的索引
-        训练循环 = tqdm(enumerate(训练数据), total=len(训练数据), ncols=130, leave=True)
+        训练循环 = tqdm(enumerate(训练数据), total=len(训练数据), ncols=130, colour='#d33682', leave=True)
         for 训练批次, (图像变换1, 图像变换2) in 训练循环:
             图像变换1, 图像变换2 = 图像变换1.to(硬件设备), 图像变换2.to(硬件设备)
 
@@ -128,22 +128,22 @@ def 无标签训练(命令行参数):
     网络模型.load_state_dict(simCLR模型参数) # 加载模型参数
     '''
 
-    网络模型1 = SimCLRModel.无监督simCLRresnet50(True)
+    网络模型1 = SimCLRModel.无监督simCLR50(True)
     网络模型1.to(硬件设备)
     优化器1 = torch.optim.Adam(网络模型1.parameters())
     训练模型(网络模型1, 优化器1, 硬件设备, 命令行参数, 随机图像变换)
 
-    网络模型2 = SimCLRModel.无监督simCLRresnet50(True)
+    网络模型2 = SimCLRModel.无监督simCLR50(True)
     网络模型2.to(硬件设备)
     优化器2 = torch.optim.AdamW(网络模型2.parameters())
     训练模型(网络模型2, 优化器2, 硬件设备, 命令行参数, 随机图像变换)
 
-    网络模型3 = SimCLRModel.无监督simCLRresnet50(True)
+    网络模型3 = SimCLRModel.无监督simCLR50(True)
     网络模型3.to(硬件设备)
     优化器3 = torch.optim.Adamax(网络模型3.parameters())
     训练模型(网络模型3, 优化器3, 硬件设备, 命令行参数, 随机图像变换)
 
-    网络模型4 = SimCLRModel.无监督simCLRresnet50(True)
+    网络模型4 = SimCLRModel.无监督simCLR50(True)
     网络模型4.to(硬件设备)
     优化器4 = torch.optim.Adadelta(网络模型4.parameters())
     训练模型(网络模型4, 优化器4, 硬件设备, 命令行参数, 随机图像变换)
@@ -153,7 +153,7 @@ if __name__ == '__main__':
     # 设置一个参数解析器
     命令行参数解析器 = argparse.ArgumentParser(description='无标签数据训练 SimCLR')
     # 添加无标签数据训练时的参数
-    命令行参数解析器.add_argument('--unlabeled_data_batch_size', default=120, type=int, help="无标签数据训练时的批量大小")
+    命令行参数解析器.add_argument('--unlabeled_data_batch_size', default=2, type=int, help="无标签数据训练时的批量大小")
     命令行参数解析器.add_argument('--unlabeled_train_max_epoch', default=6000, type=int, help="无标签训练的最大迭代周期")
     命令行参数解析器.add_argument('--unlabeled_train_resize', default=224, type=int, help="随机缩放图像的大小")
     # 获取命令行传入的参数
